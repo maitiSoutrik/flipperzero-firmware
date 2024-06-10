@@ -10,24 +10,65 @@
 #define BAD_USB_SETTINGS_VERSION 1
 #define BAD_USB_SETTINGS_DEFAULT_LAYOUT BAD_USB_APP_PATH_LAYOUT_FOLDER "/en-US.kl"
 
+/**
+ * @brief Custom event callback for the Bad USB application.
+ *
+ * This function is called when a custom event is triggered in the Bad USB application.
+ * It asserts that the context is valid, casts the context to a BadUsbApp instance,
+ * and then handles the custom event using the scene manager.
+ *
+ * @param context Pointer to the context, expected to be a BadUsbApp instance.
+ * @param event The custom event identifier.
+ * @return true if the event was handled successfully, false otherwise.
+ */
 static bool bad_usb_app_custom_event_callback(void* context, uint32_t event) {
     furi_assert(context);
     BadUsbApp* app = context;
     return scene_manager_handle_custom_event(app->scene_manager, event);
 }
 
+/**
+ * @brief Back event callback for the Bad USB application.
+ *
+ * This function is called when a back event is triggered in the Bad USB application.
+ * It asserts that the context is valid, casts the context to a BadUsbApp instance,
+ * and then handles the back event using the scene manager.
+ *
+ * @param context Pointer to the context, expected to be a BadUsbApp instance.
+ * @return true if the event was handled successfully, false otherwise.
+ */
 static bool bad_usb_app_back_event_callback(void* context) {
     furi_assert(context);
     BadUsbApp* app = context;
     return scene_manager_handle_back_event(app->scene_manager);
 }
 
+
+/**
+ * @brief Tick event callback for the Bad USB application.
+ *
+ * This function is called periodically to handle tick events in the Bad USB application.
+ * It asserts that the context is valid, casts the context to a BadUsbApp instance,
+ * and then handles the tick event using the scene manager.
+ *
+ * @param context Pointer to the context, expected to be a BadUsbApp instance.
+ */
 static void bad_usb_app_tick_event_callback(void* context) {
     furi_assert(context);
     BadUsbApp* app = context;
     scene_manager_handle_tick_event(app->scene_manager);
 }
 
+/**
+ * @brief Loads the settings for the Bad USB application.
+ *
+ * This function opens the storage record and allocates a FlipperFormat file object.
+ * It attempts to open the settings file specified by BAD_USB_SETTINGS_PATH. If the file
+ * exists and is valid, it reads the settings including the keyboard layout and interface type.
+ * If the settings file is not valid or does not exist, it sets default values for the settings.
+ *
+ * @param app Pointer to the BadUsbApp instance whose settings are to be loaded.
+ */
 static void bad_usb_load_settings(BadUsbApp* app) {
     Storage* storage = furi_record_open(RECORD_STORAGE);
     FlipperFormat* fff = flipper_format_file_alloc(storage);
@@ -74,6 +115,16 @@ static void bad_usb_load_settings(BadUsbApp* app) {
     furi_string_free(temp_str);
 }
 
+/**
+ * @brief Saves the current settings of the BadUsbApp instance to a file.
+ *
+ * This function opens the storage record and allocates a FlipperFormat file object.
+ * It then attempts to open or create the settings file specified by BAD_USB_SETTINGS_PATH.
+ * If successful, it writes the settings header, keyboard layout, and interface type to the file.
+ * Finally, it frees the FlipperFormat object and closes the storage record.
+ *
+ * @param app A pointer to the BadUsbApp instance whose settings are to be saved.
+ */
 static void bad_usb_save_settings(BadUsbApp* app) {
     Storage* storage = furi_record_open(RECORD_STORAGE);
     FlipperFormat* fff = flipper_format_file_alloc(storage);
@@ -94,6 +145,19 @@ static void bad_usb_save_settings(BadUsbApp* app) {
     furi_record_close(RECORD_STORAGE);
 }
 
+/**
+ * @brief Allocates and initializes a new BadUsbApp instance.
+ *
+ * This function allocates memory for a new BadUsbApp instance and initializes its members.
+ * It sets up the file path and keyboard layout, loads settings, and initializes various
+ * components such as the GUI, notifications, dialogs, view dispatcher, scene manager, and
+ * custom widgets. It also handles USB configuration and scene management based on the
+ * provided argument.
+ *
+ * @param arg A string argument that specifies the file path for the BadUsbApp instance.
+ *            If the argument is NULL or empty, the default file path is used.
+ * @return A pointer to the newly allocated and initialized BadUsbApp instance.
+ */
 BadUsbApp* bad_usb_app_alloc(char* arg) {
     BadUsbApp* app = malloc(sizeof(BadUsbApp));
 
@@ -160,52 +224,81 @@ BadUsbApp* bad_usb_app_alloc(char* arg) {
     return app;
 }
 
+/**
+ * @brief Frees the resources allocated for the BadUsbApp instance.
+ *
+ * This function releases all the resources associated with the BadUsbApp instance,
+ * including views, widgets, configuration menus, and other dynamically allocated
+ * memory. It also ensures that any open scripts are closed and settings are saved.
+ *
+ * @param app Pointer to the BadUsbApp instance to be freed.
+ */
 void bad_usb_app_free(BadUsbApp* app) {
     furi_assert(app);
 
+    // Close the Bad USB script if it is open
     if(app->bad_usb_script) {
         bad_usb_script_close(app->bad_usb_script);
         app->bad_usb_script = NULL;
     }
 
-    // Views
+    // Remove and free the views
     view_dispatcher_remove_view(app->view_dispatcher, BadUsbAppViewWork);
     bad_usb_view_free(app->bad_usb_view);
 
-    // Custom Widget
+    // Remove and free the custom widget
     view_dispatcher_remove_view(app->view_dispatcher, BadUsbAppViewError);
     widget_free(app->widget);
 
-    // Config menu
+    // Remove and free the configuration menu
     view_dispatcher_remove_view(app->view_dispatcher, BadUsbAppViewConfig);
     variable_item_list_free(app->var_item_list);
 
-    // View dispatcher
+    // Free the view dispatcher and scene manager
     view_dispatcher_free(app->view_dispatcher);
     scene_manager_free(app->scene_manager);
 
-    // Close records
+    // Close the records
     furi_record_close(RECORD_GUI);
     furi_record_close(RECORD_NOTIFICATION);
     furi_record_close(RECORD_DIALOGS);
 
+    // Save the application settings
     bad_usb_save_settings(app);
 
+    // Free the strings
     furi_string_free(app->file_path);
     furi_string_free(app->keyboard_layout);
 
+    // Restore the previous USB configuration if it was changed
     if(app->usb_if_prev) {
         furi_check(furi_hal_usb_set_config(app->usb_if_prev, NULL));
     }
 
+    // Free the application instance
     free(app);
 }
 
+/**
+ * @brief Entry point for the Bad USB application.
+ *
+ * This function initializes the Bad USB application, runs the view dispatcher,
+ * and then frees the application resources upon completion.
+ *
+ * @param p Pointer to the parameter passed to the application.
+ * @return int32_t Returns 0 upon successful execution.
+ */
 int32_t bad_usb_app(void* p) {
+    // Allocate and initialize the Bad USB application
     BadUsbApp* bad_usb_app = bad_usb_app_alloc((char*)p);
 
+    // Run the view dispatcher for the application
     view_dispatcher_run(bad_usb_app->view_dispatcher);
 
+    // Free the application resources
     bad_usb_app_free(bad_usb_app);
+
+    // Return success
     return 0;
 }
+
